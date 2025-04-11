@@ -79,20 +79,20 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 			log.Errorf("Detected circular reference in CNAME chain. CNAME [%s] already processed", targetName)
 		} else {
-			up, err := s.upstream.Lookup(ctx, state, targetName, state.QType())
+			lookupMsg, err := s.upstream.Lookup(ctx, state, targetName, state.QType())
 			if err != nil {
 				upstreamErrorCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 				success = false
 
 				log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", rrCname, err)
 			} else {
-				if len(up.Answer) == 0 {
+				if len(lookupMsg.Answer) == 0 {
 					danglingCNameCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 					success = false
 
-					log.Errorf("Received no answer from upstream: [%+v]", up)
+					log.Errorf("Received no answer from upstream: [%+v]", lookupMsg)
 				} else {
-					rrCname = up.Answer[0]
+					rrCname = lookupMsg.Answer[0]
 					switch rrCname.Header().Rrtype {
 					case dns.TypeCNAME:
 						cnt++
@@ -100,7 +100,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 						answers = append(answers, rrCname)
 						goto Redo
 					default:
-						answers = append(answers, up.Answer...)
+						answers = append(answers, lookupMsg.Answer...)
 					}
 				}
 			}
