@@ -47,7 +47,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	if r == nil {
 		return 1, fmt.Errorf("no answer received")
 	}
-	if r.Answer != nil && len(r.Answer) > 0 && r.Answer[0].Header().Rrtype == dns.TypeCNAME {
+	if len(r.Answer) > 0 && r.Answer[0].Header().Rrtype == dns.TypeCNAME {
 		log.Debugf("Finalizing CNAME for request: %+v", r)
 
 		requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
@@ -83,7 +83,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 				log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", rr, err)
 			} else {
-				if up.Answer == nil || len(up.Answer) == 0 {
+				if len(up.Answer) == 0 {
 					danglingCNameCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 					success = false
 
