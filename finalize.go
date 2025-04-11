@@ -58,10 +58,10 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 		state := request.Request{W: w, Req: r}
 		// emulate hashset in go; https://emersion.fr/blog/2017/sets-in-go/
-		cnameVisited := make(map[string]struct{})
-		cnt := 0
+		lookupedNames := make(map[string]struct{})
+		depth := 0
 		rrCname := r.Answer[0]
-		answers := []dns.RR{
+		rrs := []dns.RR{
 			rrCname,
 		}
 		success := true
@@ -70,44 +70,44 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 		targetName := rrCname.(*dns.CNAME).Target
 		log.Debugf("Trying to resolve CNAME [%+v] via upstream", targetName)
 
-		if s.maxDepth > 0 && cnt >= s.maxDepth {
+		if s.maxDepth > 0 && depth >= s.maxDepth {
 			maxDepthReachedCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 
 			log.Errorf("Max depth %d reached for resolving CNAME records", s.maxDepth)
-		} else if _, ok := cnameVisited[targetName]; ok {
+		} else if _, ok := lookupedNames[targetName]; ok {
 			circularReferenceCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 
 			log.Errorf("Detected circular reference in CNAME chain. CNAME [%s] already processed", targetName)
 		} else {
 			lookupMsg, err := s.upstream.Lookup(ctx, state, targetName, state.QType())
+			lookupRRs := lookupMsg.Answer
 			if err != nil {
 				upstreamErrorCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 				success = false
 
 				log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", rrCname, err)
 			} else {
-				if len(lookupMsg.Answer) == 0 {
+				if len(lookupRRs) == 0 {
 					danglingCNameCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 					success = false
 
 					log.Errorf("Received no answer from upstream: [%+v]", lookupMsg)
 				} else {
-					rrCname = lookupMsg.Answer[0]
-					switch rrCname.Header().Rrtype {
-					case dns.TypeCNAME:
-						cnt++
-						cnameVisited[targetName] = struct{}{}
-						answers = append(answers, rrCname)
+					if lookupRRs[0].Header().Rrtype == dns.TypeCNAME {
+						depth++
+						lookupedNames[targetName] = struct{}{}
+						rrs = append(rrs, rrCname)
+						rrCname = lookupRRs[0]
 						goto Redo
-					default:
-						answers = append(answers, lookupMsg.Answer...)
+					} else {
+						rrs = append(rrs, lookupRRs...)
 					}
 				}
 			}
 		}
 
 		if success {
-			r.Answer = answers
+			r.Answer = rrs
 		}
 	} else {
 		log.Debug("Request is a CNAME type question, or didn't contain any answer or no CNAME")
