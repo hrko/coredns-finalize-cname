@@ -57,31 +57,31 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 		// emulate hashset in go; https://emersion.fr/blog/2017/sets-in-go/
 		cnameVisited := make(map[string]struct{})
 		cnt := 0
-		rr := r.Answer[0]
+		rrCname := r.Answer[0]
 		answers := []dns.RR{
-			rr,
+			rrCname,
 		}
 		success := true
 
-	resolveCname:
-		target := rr.(*dns.CNAME).Target
-		log.Debugf("Trying to resolve CNAME [%+v] via upstream", target)
+	Redo:
+		targetName := rrCname.(*dns.CNAME).Target
+		log.Debugf("Trying to resolve CNAME [%+v] via upstream", targetName)
 
 		if s.maxDepth > 0 && cnt >= s.maxDepth {
 			maxDepthReachedCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 
 			log.Errorf("Max depth %d reached for resolving CNAME records", s.maxDepth)
-		} else if _, ok := cnameVisited[target]; ok {
+		} else if _, ok := cnameVisited[targetName]; ok {
 			circularReferenceCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 
-			log.Errorf("Detected circular reference in CNAME chain. CNAME [%s] already processed", target)
+			log.Errorf("Detected circular reference in CNAME chain. CNAME [%s] already processed", targetName)
 		} else {
-			up, err := s.upstream.Lookup(ctx, state, target, state.QType())
+			up, err := s.upstream.Lookup(ctx, state, targetName, state.QType())
 			if err != nil {
 				upstreamErrorCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 				success = false
 
-				log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", rr, err)
+				log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", rrCname, err)
 			} else {
 				if len(up.Answer) == 0 {
 					danglingCNameCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
@@ -89,20 +89,20 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 					log.Errorf("Received no answer from upstream: [%+v]", up)
 				} else {
-					rr = up.Answer[0]
-					switch rr.Header().Rrtype {
+					rrCname = up.Answer[0]
+					switch rrCname.Header().Rrtype {
 					case dns.TypeCNAME:
 						cnt++
-						cnameVisited[target] = struct{}{}
-						answers = append(answers, rr)
+						cnameVisited[targetName] = struct{}{}
+						answers = append(answers, rrCname)
 
-						goto resolveCname
+						goto Redo
 					case dns.TypeA:
 						fallthrough
 					case dns.TypeAAAA:
 						answers = append(answers, up.Answer...)
 					default:
-						log.Errorf("Upstream server returned unsupported type [%+v] for CNAME question [%+v]", rr, up.Question[0])
+						log.Errorf("Upstream server returned unsupported type [%+v] for CNAME question [%+v]", rrCname, up.Question[0])
 						success = false
 					}
 				}
