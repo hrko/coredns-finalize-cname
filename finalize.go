@@ -47,7 +47,8 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	if r == nil {
 		return 1, fmt.Errorf("no answer received")
 	}
-	if len(r.Answer) > 0 && r.Answer[0].Header().Rrtype == dns.TypeCNAME {
+	qtype := r.Question[0].Qtype
+	if len(r.Answer) > 0 && r.Answer[0].Header().Rrtype == dns.TypeCNAME && qtype != dns.TypeCNAME {
 		log.Debugf("Finalizing CNAME for request: %+v", r)
 
 		requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
@@ -95,15 +96,9 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 						cnt++
 						cnameVisited[targetName] = struct{}{}
 						answers = append(answers, rrCname)
-
 						goto Redo
-					case dns.TypeA:
-						fallthrough
-					case dns.TypeAAAA:
-						answers = append(answers, up.Answer...)
 					default:
-						log.Errorf("Upstream server returned unsupported type [%+v] for CNAME question [%+v]", rrCname, up.Question[0])
-						success = false
+						answers = append(answers, up.Answer...)
 					}
 				}
 			}
@@ -113,7 +108,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			r.Answer = answers
 		}
 	} else {
-		log.Debug("Request didn't contain any answer or no CNAME")
+		log.Debug("Request is a CNAME type question, or didn't contain any answer or no CNAME")
 	}
 
 	err = w.WriteMsg(r)
