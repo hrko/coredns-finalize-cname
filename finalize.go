@@ -35,8 +35,6 @@ func New() *Finalize {
 	return s
 }
 
-type FinalizeLoopKey struct{}
-
 // ServeDNS implements the plugin.Handler interface.
 func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	// create a dummy writer, which not actually writes a response to the client
