@@ -54,100 +54,98 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	// skip if the question type is CNAME
 	if qtype == dns.TypeCNAME {
 		log.Debug("Request is a CNAME type question, skipping")
-		goto Out
+		return s.writeResponse(w, response)
 	}
 
 	if len(response.Answer) == 0 {
 		log.Debug("No answer received, skipping")
-		goto Out
+		return s.writeResponse(w, response)
 	}
 
 	// skip if the answer is already finalized
 	for _, rr := range response.Answer {
 		if rr.Header().Rrtype != dns.TypeCNAME {
 			log.Debugf("Answer is already finalized: %+v, skipping", rr)
-			goto Out
+			return s.writeResponse(w, response)
 		}
 	}
 
-	// create a block scope since `goto` cannot jump over variable declarations
-	{
-		log.Debugf("Finalizing CNAME for request: %+v", response)
+	log.Debugf("Finalizing CNAME for request: %+v", response)
 
-		state := request.Request{W: w, Req: response}
+	state := request.Request{W: w, Req: response}
 
-		requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
-		defer recordDuration(ctx, time.Now())
+	requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+	defer recordDuration(ctx, time.Now())
 
-		// emulate hashset in go; https://emersion.fr/blog/2017/sets-in-go/
-		lookupedNames := make(map[string]struct{})
-		lookupCnt := 0
-		// copy the answer to avoid modifying the original
-		rrs := make([]dns.RR, 0, len(response.Answer))
-		copy(rrs, response.Answer)
+	// emulate hashset in go; https://emersion.fr/blog/2017/sets-in-go/
+	lookupedNames := make(map[string]struct{})
+	lookupCnt := 0
+	// copy the answer to avoid modifying the original
+	rrs := make([]dns.RR, 0, len(response.Answer))
+	copy(rrs, response.Answer)
 
-		targetName, err := findLastTarget(rrs, state.QName())
-		if err != nil {
-			log.Errorf("Failed to find last target in CNAME chain: %v", err)
-			goto Out
-		}
-
-	Redo:
-		log.Debugf("Trying to resolve CNAME [%+v] via upstream", targetName)
-
-		if s.maxLookup > 0 && lookupCnt >= s.maxLookup {
-			maxLookupReachedCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
-			log.Errorf("Max lookup %d reached for resolving CNAME records", s.maxLookup)
-			goto Out
-		}
-		lookupCnt++
-
-		if _, ok := lookupedNames[targetName]; ok {
-			circularReferenceCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
-			log.Errorf("Detected circular reference in CNAME chain. CNAME [%s] already processed", targetName)
-			goto Out
-		}
-
-		lookupMsg, err := s.upstream.Lookup(ctx, state, targetName, state.QType())
-		if err != nil {
-			upstreamErrorCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
-			log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", targetName, err)
-			goto Out
-		}
-
-		lookupRRs := lookupMsg.Answer
-		if len(lookupRRs) == 0 {
-			danglingCNameCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
-			log.Errorf("Received no answer from upstream: [%+v]", lookupMsg)
-			goto Out
-		}
-
-		rrs = append(rrs, lookupRRs...)
-
-		// check if answer is finalized
-		for _, rr := range lookupRRs {
-			if rr.Header().Rrtype != dns.TypeCNAME {
-				log.Debugf("Recieved finalized answer: %+v", lookupRRs)
-				response.Answer = rrs
-				goto Out
-			}
-		}
-
-		// add the CNAME to the list of processed names
-		lookupedNames[targetName] = struct{}{}
-
-		// get the next target name
-		targetName, err = findLastTarget(lookupRRs, targetName)
-		if err != nil {
-			log.Errorf("Failed to find last target in CNAME chain: %v", err)
-			goto Out
-		}
-		log.Debugf("Found next target name: %s", targetName)
-		goto Redo
+	targetName, err := findLastTarget(rrs, state.QName())
+	if err != nil {
+		log.Errorf("Failed to find last target in CNAME chain: %v", err)
+		return s.writeResponse(w, response)
 	}
 
-Out:
-	err = w.WriteMsg(response)
+Redo:
+	log.Debugf("Trying to resolve CNAME [%+v] via upstream", targetName)
+
+	if s.maxLookup > 0 && lookupCnt >= s.maxLookup {
+		maxLookupReachedCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+		log.Errorf("Max lookup %d reached for resolving CNAME records", s.maxLookup)
+		return s.writeResponse(w, response)
+	}
+	lookupCnt++
+
+	if _, ok := lookupedNames[targetName]; ok {
+		circularReferenceCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+		log.Errorf("Detected circular reference in CNAME chain. CNAME [%s] already processed", targetName)
+		return s.writeResponse(w, response)
+	}
+
+	lookupMsg, err := s.upstream.Lookup(ctx, state, targetName, state.QType())
+	if err != nil {
+		upstreamErrorCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+		log.Errorf("Failed to lookup CNAME [%+v] from upstream: [%+v]", targetName, err)
+		return s.writeResponse(w, response)
+	}
+
+	lookupRRs := lookupMsg.Answer
+	if len(lookupRRs) == 0 {
+		danglingCNameCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+		log.Errorf("Received no answer from upstream: [%+v]", lookupMsg)
+		return s.writeResponse(w, response)
+	}
+
+	rrs = append(rrs, lookupRRs...)
+
+	// check if answer is finalized
+	for _, rr := range lookupRRs {
+		if rr.Header().Rrtype != dns.TypeCNAME {
+			log.Debugf("Recieved finalized answer: %+v", lookupRRs)
+			response.Answer = rrs
+			return s.writeResponse(w, response)
+		}
+	}
+
+	// add the CNAME to the list of processed names
+	lookupedNames[targetName] = struct{}{}
+
+	// get the next target name
+	targetName, err = findLastTarget(lookupRRs, targetName)
+	if err != nil {
+		log.Errorf("Failed to find last target in CNAME chain: %v", err)
+		return s.writeResponse(w, response)
+	}
+	log.Debugf("Found next target name: %s", targetName)
+	goto Redo
+}
+
+func (s *Finalize) writeResponse(w dns.ResponseWriter, response *dns.Msg) (int, error) {
+	err := w.WriteMsg(response)
 	if err != nil {
 		return dns.RcodeServerFailure, err
 	}
