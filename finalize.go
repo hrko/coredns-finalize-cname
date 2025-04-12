@@ -49,20 +49,20 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	if response == nil {
 		return dns.RcodeServerFailure, fmt.Errorf("no answer received")
 	}
-	qtype := response.Question[0].Qtype
 
-	// skip if the question type is CNAME
-	if qtype == dns.TypeCNAME {
+	// do not process if the question type is CNAME
+	if response.Question[0].Qtype == dns.TypeCNAME {
 		log.Debug("Request is a CNAME type question, skipping")
 		return s.writeResponse(w, response)
 	}
 
+	// do not process if no answer is received
 	if len(response.Answer) == 0 {
 		log.Debug("No answer received, skipping")
 		return s.writeResponse(w, response)
 	}
 
-	// skip if the answer is already finalized
+	// do not process if the answer is already finalized by other plugins
 	for _, rr := range response.Answer {
 		if rr.Header().Rrtype != dns.TypeCNAME {
 			log.Debugf("Answer is already finalized: %+v, skipping", rr)
