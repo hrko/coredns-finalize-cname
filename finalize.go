@@ -168,7 +168,7 @@ func findLastTarget(rrs []dns.RR, qname string) (string, error) {
 	}
 
 	if len(nameToTarget) == 0 {
-		return "", fmt.Errorf("no CNAME records found")
+		return "", fmt.Errorf("no CNAME records found in rrs: %v", rrs)
 	}
 
 	// find the last target by following the chain
