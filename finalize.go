@@ -71,19 +71,16 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	}
 
 	log.Debugf("Finalizing CNAME for request: %+v", response)
-
-	state := request.Request{W: w, Req: response}
-
 	requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
 	defer recordDuration(ctx, time.Now())
 
+	state := request.Request{W: w, Req: response}
 	// emulate hashset in go; https://emersion.fr/blog/2017/sets-in-go/
 	lookupedNames := make(map[string]struct{})
 	lookupCnt := 0
 	// copy the answer to avoid modifying the original
 	rrs := make([]dns.RR, 0, len(response.Answer))
 	copy(rrs, response.Answer)
-
 	targetName, err := findLastTarget(rrs, state.QName())
 	if err != nil {
 		log.Errorf("Failed to find last target in CNAME chain: %v", err)
