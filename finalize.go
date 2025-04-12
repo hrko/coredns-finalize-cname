@@ -22,14 +22,14 @@ var log = clog.NewWithPlugin(pluginName)
 type Finalize struct {
 	Next plugin.Handler
 
-	upstream *upstream.Upstream
-	maxDepth int
+	upstream  *upstream.Upstream
+	maxLookup int
 }
 
 func New() *Finalize {
 	s := &Finalize{
-		upstream: upstream.New(),
-		maxDepth: 0,
+		upstream:  upstream.New(),
+		maxLookup: 10,
 	}
 
 	return s
@@ -83,7 +83,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 		// emulate hashset in go; https://emersion.fr/blog/2017/sets-in-go/
 		lookupedNames := make(map[string]struct{})
-		depth := 0
+		lookupCnt := 0
 		// copy the answer to avoid modifying the original
 		rrs := make([]dns.RR, 0, len(response.Answer))
 		copy(rrs, response.Answer)
@@ -97,12 +97,12 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	Redo:
 		log.Debugf("Trying to resolve CNAME [%+v] via upstream", targetName)
 
-		if s.maxDepth > 0 && depth >= s.maxDepth {
-			maxDepthReachedCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
-			log.Errorf("Max depth %d reached for resolving CNAME records", s.maxDepth)
+		if s.maxLookup > 0 && lookupCnt >= s.maxLookup {
+			maxLookupReachedCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+			log.Errorf("Max lookup %d reached for resolving CNAME records", s.maxLookup)
 			goto Out
 		}
-		depth++
+		lookupCnt++
 
 		if _, ok := lookupedNames[targetName]; ok {
 			circularReferenceCount.WithLabelValues(metrics.WithServer(ctx)).Inc()

@@ -31,11 +31,11 @@ var danglingCNameCount = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help:      "Counter of CNAMES that couldn't be resolved.",
 }, []string{"server"})
 
-var maxDepthReachedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+var maxLookupReachedCount = promauto.NewCounterVec(prometheus.CounterOpts{
 	Namespace: plugin.Namespace,
 	Subsystem: pluginName,
-	Name:      "maxdepth_reached_count_total",
-	Help:      "Counter of incidents when max depth is reached while trying to resolve a CNAME.",
+	Name:      "max_lookup_reached_count_total",
+	Help:      "Counter of incidents when the maximum lookup depth was reached while trying to resolve a CNAME.",
 }, []string{"server"})
 
 var upstreamErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{

@@ -40,15 +40,15 @@ func parse(c *caddy.Controller) (*Finalize, error) {
 		case 1:
 			return nil, c.ArgErr()
 		case 2:
-			if strings.EqualFold("max_depth", args[0]) {
+			if strings.EqualFold("max_lookup", args[0]) {
 				n, err := strconv.Atoi(args[1])
 				if err != nil {
 					return nil, err
 				}
 				if n <= 0 {
-					return nil, fmt.Errorf("max_depth parameter must be greater than 0")
+					return nil, fmt.Errorf("max_lookup parameter must be greater than 0")
 				}
-				finalizePlugin.maxDepth = n
+				finalizePlugin.maxLookup = n
 			} else {
 				return nil, fmt.Errorf("unsupported parameter %s for upstream setting", args[0])
 			}
