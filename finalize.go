@@ -79,7 +79,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	lookupedNames := make(map[string]struct{})
 	lookupCnt := 0
 	// copy the answer to avoid modifying the original
-	rrs := make([]dns.RR, 0, len(response.Answer))
+	rrs := make([]dns.RR, len(response.Answer))
 	copy(rrs, response.Answer)
 	targetName, err := findLastTarget(rrs, state.QName())
 	if err != nil {
