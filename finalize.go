@@ -47,7 +47,7 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 	r = nw.Msg
 	if r == nil {
-		return 1, fmt.Errorf("no answer received")
+		return dns.RcodeServerFailure, fmt.Errorf("no answer received")
 	}
 	qtype := r.Question[0].Qtype
 	if len(r.Answer) > 0 && r.Answer[0].Header().Rrtype == dns.TypeCNAME && qtype != dns.TypeCNAME {
@@ -115,10 +115,10 @@ func (s *Finalize) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 
 	err = w.WriteMsg(r)
 	if err != nil {
-		return 1, err
+		return dns.RcodeServerFailure, err
 	}
 
-	return 0, nil
+	return dns.RcodeSuccess, nil
 }
 
 // Name implements the Handler interface.
